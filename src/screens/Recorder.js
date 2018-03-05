@@ -6,10 +6,12 @@ import { StackNavigator } from 'react-navigation';
 import { AudioRecorder, AudioUtils } from 'react-native-audio'
 
 export default class Recorder extends React.Component {
+
   constructor (props) {
     super(props)
 
-    this.recording = this._recording.bind(this)
+    this.recording = this._recording.bind(this);
+
     this.state = {
       file: {
         data: {},
@@ -24,26 +26,51 @@ export default class Recorder extends React.Component {
         AudioEncodingBitRate: 32000
       },
       isRecording: false,
+      recordingTime: 0,
       mark: '●',
     }
   }
 
   _recording() {
     if (!this.state.isRecording) {
-      this.setState({isRecording: true, mark: '■'});
-      Alert.alert(this.state.file.path + this.state.file.name);
-      /*
-      AudioRecorder.prepareRecordingAtPath(
-        this.state.file.path + this.state.file.name,
-        this.state.config
-      );
-      AudioRecorder.startRecording()
-      */
+      this._startRecording(this.state);
+      this.setState({isRecording: true, mark: '■', recordingTime: 0});
     } else {
+      this._stopRecording(this.state);
       this.setState({isRecording: false, mark: '●'})
-      Alert.alert("_onPressHandler:false");
+    }
+  }
+
+  async _startRecording(state) {
+    //Alert.alert(state.file.path + state.file.name);
+    AudioRecorder.prepareRecordingAtPath(
+      state.file.path + state.file.name,
+      state.config
+    );
+    try {
+      const filePath = await AudioRecorder.startRecording();
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  async _stopRecording(state) {
+    //Alert.alert("_onPressHandler:false");
+    try {
+      const filePath = await AudioRecorder.stopRecording();
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  componentDidMount() {
+    AudioRecorder.onFinished = (data) => {
+      Alert.alert("finished:"+data.audioFileURL);
     }
 
+    AudioRecorder.onProgress = ({ currentTime }) => {
+      this.setState({ recordingTime: Math.floor(currentTime) })
+    }
   }
 
   render() {

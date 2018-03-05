@@ -1,7 +1,5 @@
 /**
  * Sample React Native App
- * https://github.com/facebook/react-native
- * @flow
 **/
 console.disableYellowBox = true;
 import React from 'react';
