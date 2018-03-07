@@ -4,13 +4,15 @@ import { StyleSheet, View, Button, Text, TouchableOpacity, Alert } from 'react-n
 import { StackNavigator } from 'react-navigation';
 //recording
 import { AudioRecorder, AudioUtils } from 'react-native-audio'
+//sound
+import Sound from 'react-native-sound';
 
 export default class Recorder extends React.Component {
 
   constructor (props) {
     super(props)
-
     this.recording = this._recording.bind(this);
+    Sound.setCategory('Playback');
 
     this.state = {
       file: {
@@ -65,7 +67,10 @@ export default class Recorder extends React.Component {
 
   componentDidMount() {
     AudioRecorder.onFinished = (data) => {
-      Alert.alert("finished:"+data.audioFileURL);
+      let _voice = new Sound(data.audioFileURL, '', (error) => {
+        if (error) {Alert.alert('failed to load the sound', error);}
+        _voice.play();
+      });
     }
 
     AudioRecorder.onProgress = ({ currentTime }) => {
