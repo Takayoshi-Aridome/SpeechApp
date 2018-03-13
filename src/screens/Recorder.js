@@ -7,12 +7,40 @@ import { AudioRecorder, AudioUtils } from 'react-native-audio'
 //sound
 import Sound from 'react-native-sound';
 
+import RNFetchBlob from 'react-native-fetch-blob';
+import { Buffer } from 'buffer/';
+
 export default class Recorder extends React.Component {
 
   constructor (props) {
     super(props)
     this.recording = this._recording.bind(this);
     Sound.setCategory('Playback');
+
+    this.testBuffer = function() {
+      console.log("==== testBuffer:function ==== start");
+      var str1 = Buffer.from('hello', 'base64');
+      var str2 = Buffer.from('hello').toString('base64');
+      var _buffer = new Buffer('hello');
+      var str3 = _buffer.toString('base64');
+      var str4 = new Buffer('hello').toString('base64');
+
+      //LOG::
+      console.log("str1: ", str1); // str1:  Uint8Array(4) [133, 233, 101, 160]
+      console.log("str2: ", str2); // str2:  aGVsbG8=
+      console.log("str3: ", str3); // str3:  aGVsbG8=
+      console.log("str4: ", str4); // str4:  aGVsbG8=
+      console.log("---- testBuffer:function ---- end");
+    }();
+
+    this.testRNFetchBlobFsDirs = function() {
+      console.log("==== testRNFetchBlobFsDirs:function ==== start");
+      const { fs, fetch, wrap } = RNFetchBlob;
+      const dirs = RNFetchBlob.fs.dirs;
+      console.log("dirs.DocumentDir: ", dirs.DocumentDir);
+      console.log("dirs.CacheDir: ", dirs.CacheDir);
+      console.log("---- testRNFetchBlobFsDirs:function ---- end");
+    }();
 
     this.state = {
       file: {
