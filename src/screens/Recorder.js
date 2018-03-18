@@ -1,109 +1,126 @@
 import React from 'react';
-import { StyleSheet, View, Button, Text, TouchableOpacity, Alert } from 'react-native';
+import { Platform, StyleSheet, View, Button, Text, TouchableOpacity, Alert } from 'react-native';
 //rooting
 import { StackNavigator } from 'react-navigation';
 //recording
 import { AudioRecorder, AudioUtils } from 'react-native-audio'
 //sound
 import Sound from 'react-native-sound';
-
+//fileSystem network
 import RNFetchBlob from 'react-native-fetch-blob';
+//binary
 import { Buffer } from 'buffer/';
 
 export default class Recorder extends React.Component {
 
   constructor (props) {
     super(props)
+
+    this.audioFile = {
+      name: 'voice.wav',
+      binary: null,
+      buffer: null,
+    }
+
+    this.audioOptions = {
+      SampleRate: 44100.0,
+      Channels: 2,
+      AudioQuality: "High",
+      AudioEncoding: "lpcm",
+    }
+
+    this.IBMCloud = {
+      ws: null,
+    }
+
     this.recording = this._recording.bind(this);
-    Sound.setCategory('Playback');
-
-    this.testBuffer = function() {
-      console.log("==== testBuffer:function ==== start");
-      var str1 = Buffer.from('hello', 'base64');
-      var str2 = Buffer.from('hello').toString('base64');
-      var _buffer = new Buffer('hello');
-      var str3 = _buffer.toString('base64');
-      var str4 = new Buffer('hello').toString('base64');
-
-      //LOG::
-      console.log("str1: ", str1); // str1:  Uint8Array(4) [133, 233, 101, 160]
-      console.log("str2: ", str2); // str2:  aGVsbG8=
-      console.log("str3: ", str3); // str3:  aGVsbG8=
-      console.log("str4: ", str4); // str4:  aGVsbG8=
-      console.log("---- testBuffer:function ---- end");
-    }();
-
-    this.testRNFetchBlobFsDirs = function() {
-      console.log("==== testRNFetchBlobFsDirs:function ==== start");
-      const { fs, fetch, wrap } = RNFetchBlob;
-      const dirs = RNFetchBlob.fs.dirs;
-      console.log("dirs.DocumentDir: ", dirs.DocumentDir);
-      console.log("dirs.CacheDir: ", dirs.CacheDir);
-      console.log("---- testRNFetchBlobFsDirs:function ---- end");
-    }();
+    this.createAudioBuffer = this._createAudioBuffer.bind(this);
+    this.connectToIBMCloud = this._connectToIBMCloud.bind(this);
 
     this.state = {
-      file: {
-        data: {},
-        path: AudioUtils.DocumentDirectoryPath + '/',
-        name: 'speech.aac'
-      },
-      config: {
-        SampleRate: 22050,
-        Channels: 1,
-        AudioQuality: 'Low',
-        AudioEncoding: 'aac',
-        AudioEncodingBitRate: 32000
-      },
       isRecording: false,
-      recordingTime: 0,
       mark: '●',
     }
   }
 
   _recording() {
     if (!this.state.isRecording) {
-      this._startRecording(this.state);
-      this.setState({isRecording: true, mark: '■', recordingTime: 0});
+      this._startRecording(
+        RNFetchBlob.fs.dirs.DocumentDir + '/' + this.audioFile.name,
+        this.audioOptions,
+      );
+      this.setState({isRecording: true, mark: '■'});
     } else {
-      this._stopRecording(this.state);
+      this._stopRecording();
       this.setState({isRecording: false, mark: '●'})
     }
   }
 
-  async _startRecording(state) {
-    //Alert.alert(state.file.path + state.file.name);
-    AudioRecorder.prepareRecordingAtPath(
-      state.file.path + state.file.name,
-      state.config
-    );
+  async _startRecording(audioFileUri, audioOptions) {
+    AudioRecorder.prepareRecordingAtPath(audioFileUri, audioOptions);
     try {
       const filePath = await AudioRecorder.startRecording();
     } catch (error) {
-      console.error(error);
+      console.error('startRecording: ', error);
     }
   }
 
-  async _stopRecording(state) {
-    //Alert.alert("_onPressHandler:false");
+  async _stopRecording() {
     try {
       const filePath = await AudioRecorder.stopRecording();
     } catch (error) {
-      console.error(error);
+      console.error('stopRecording: ', error);
     }
   }
 
   componentDidMount() {
     AudioRecorder.onFinished = (data) => {
-      let _voice = new Sound(data.audioFileURL, '', (error) => {
-        if (error) {Alert.alert('failed to load the sound', error);}
-        _voice.play();
-      });
+      this.createAudioBuffer(
+        RNFetchBlob.fs.dirs.DocumentDir + '/' + this.audioFile.name,
+        this.connectToIBMCloud
+      );
     }
+    AudioRecorder.onProgress = () => {}
+  }
 
-    AudioRecorder.onProgress = ({ currentTime }) => {
-      this.setState({ recordingTime: Math.floor(currentTime) })
-    }
+  _createAudioBuffer(audioFileUri, onCompleteHandler) {
+    let _audioFileUri = audioFileUri;
+    let _audioFileBinary = '';
+    let _audioFileBuffer = null;
+    RNFetchBlob.fs.readStream(_audioFileUri, 'base64', 4095).then((ifstream) => {
+      ifstream.open();
+      ifstream.onData((chunk) => {
+        _audioFileBinary += chunk;
+      });
+      ifstream.onError((error) => {
+        console.log('readStream: ', error);
+      });
+      ifstream.onEnd(() => {
+          _audioFileBuffer = Buffer.from(_audioFileBinary, 'base64');
+          this.audioFile.uri = _audioFileUri;
+          this.audioFile.binary = _audioFileBinary;
+          this.audioFile.buffer = _audioFileBuffer;
+          onCompleteHandler();
+      });
+    });
+  }
+
+  _connectToIBMCloud() {
+    this.IBMCloud.ws = new WebSocket('wss://tawork.mybluemix.net/ws/test');
+    let _ws = this.IBMCloud.ws;
+
+    _ws.onopen = () => {
+      _ws.send(this.audioFile.buffer);
+    };
+    _ws.onmessage = (event) => {
+      console.log(event);
+    };
+    _ws.onerror = (event) => {
+      console.log(event.message);
+    };
+    _ws.onclose = (event) => {
+      console.log(event.code, event.reason);
+    };
   }
 
   render() {
