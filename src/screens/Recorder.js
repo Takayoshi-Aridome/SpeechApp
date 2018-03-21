@@ -1,54 +1,33 @@
 import React from 'react';
 import { Platform, StyleSheet, View, Button, Text, TouchableOpacity, Alert } from 'react-native';
-//rooting
 import { StackNavigator } from 'react-navigation';
-//recording
-import { AudioRecorder, AudioUtils } from 'react-native-audio'
-//sound
+import { AudioRecorder, AudioUtils } from 'react-native-audio';
 import Sound from 'react-native-sound';
-//fileSystem network
 import RNFetchBlob from 'react-native-fetch-blob';
-//binary
 import { Buffer } from 'buffer/';
 
-export default class Recorder extends React.Component {
+const bluemixUrls = {'places': 'wss://taspeechapp.mybluemix.net/speech/places',};
+const record = {'name': 'record', 'type': 'wav',};
+const announce = {'name': 'announce','type': 'mp3',};
 
+export default class Recorder extends React.Component {
   constructor (props) {
     super(props)
 
-    this.audioFile = {
-      name: 'voice.wav',
-      binary: null,
-      buffer: null,
-    }
-
-    this.audioOptions = {
-      SampleRate: 44100.0,
-      Channels: 2,
-      AudioQuality: "High",
-      AudioEncoding: "lpcm",
-    }
-
-    this.IBMCloud = {
-      ws: null,
-    }
-
+    this.state = {isRecording: false, mark: '●',};
+    this.audioFiles = {};
+    this.audioOptions = {'SampleRate': 44100.0, 'Channels': 2, 'AudioQuality': "High", 'AudioEncoding': "lpcm",};
+    this.connections = {};
     this.recording = this._recording.bind(this);
     this.createAudioBuffer = this._createAudioBuffer.bind(this);
-    this.connectToIBMCloud = this._connectToIBMCloud.bind(this);
+    this.getPlaces = this._getPlaces.bind(this);
 
-    this.state = {
-      isRecording: false,
-      mark: '●',
-    }
+    Sound.setCategory('Playback');
   }
 
   _recording() {
     if (!this.state.isRecording) {
-      this._startRecording(
-        RNFetchBlob.fs.dirs.DocumentDir + '/' + this.audioFile.name,
-        this.audioOptions,
-      );
+      this._startRecording(record.name, record.type, this.audioOptions);
       this.setState({isRecording: true, mark: '■'});
     } else {
       this._stopRecording();
@@ -56,8 +35,11 @@ export default class Recorder extends React.Component {
     }
   }
 
-  async _startRecording(audioFileUri, audioOptions) {
-    AudioRecorder.prepareRecordingAtPath(audioFileUri, audioOptions);
+  async _startRecording(audioFileName, audioFileType, audioOptions) {
+    let _audioFile = { 'name': audioFileName, 'type': audioFileType,};
+    let _audioFileUri = RNFetchBlob.fs.dirs.DocumentDir + '/' + audioFileName + '.' + audioFileType;
+    this.audioFiles[audioFileName] = _audioFile;
+    AudioRecorder.prepareRecordingAtPath(_audioFileUri, audioOptions);
     try {
       const filePath = await AudioRecorder.startRecording();
     } catch (error) {
@@ -75,52 +57,74 @@ export default class Recorder extends React.Component {
 
   componentDidMount() {
     AudioRecorder.onFinished = (data) => {
-      this.createAudioBuffer(
-        RNFetchBlob.fs.dirs.DocumentDir + '/' + this.audioFile.name,
-        this.connectToIBMCloud
-      );
+      this.createAudioBuffer(record.name, record.type);
     }
     AudioRecorder.onProgress = () => {}
   }
 
-  _createAudioBuffer(audioFileUri, onCompleteHandler) {
-    let _audioFileUri = audioFileUri;
-    let _audioFileBinary = '';
-    let _audioFileBuffer = null;
-    RNFetchBlob.fs.readStream(_audioFileUri, 'base64', 4095).then((ifstream) => {
-      ifstream.open();
-      ifstream.onData((chunk) => {
-        _audioFileBinary += chunk;
+  _createAudioBuffer(audioFileName, audioFileType) {
+    let _audioFile = {
+      'name': audioFileName,
+      'type': audioFileType,
+      'uri': RNFetchBlob.fs.dirs.DocumentDir + '/' + audioFileName + '.' + audioFileType,
+      'binary': '',
+      'buffer': null,
+    };
+
+    RNFetchBlob.fs.readStream(_audioFile.uri, 'base64', 4095).then((stream) => {
+      stream.open();
+      stream.onData((chunk) => {
+        _audioFile.binary += chunk;
       });
-      ifstream.onError((error) => {
+      stream.onError((error) => {
         console.log('readStream: ', error);
       });
-      ifstream.onEnd(() => {
-          _audioFileBuffer = Buffer.from(_audioFileBinary, 'base64');
-          this.audioFile.uri = _audioFileUri;
-          this.audioFile.binary = _audioFileBinary;
-          this.audioFile.buffer = _audioFileBuffer;
-          onCompleteHandler();
+      stream.onEnd(() => {
+          _audioFile.buffer = Buffer.from(_audioFile.binary, 'base64');
+          this.audioFiles[audioFileName] = _audioFile;
+          this.getPlaces(bluemixUrls.places, _audioFile.buffer);
       });
     });
   }
 
-  _connectToIBMCloud() {
-    this.IBMCloud.ws = new WebSocket('wss://tawork.mybluemix.net/ws/test');
-    let _ws = this.IBMCloud.ws;
+  _getPlaces(socketUrl, socketInput) {
+    let _connection = { 'url': socketUrl, 'input': socketInput, };
+    let _ws = new WebSocket(_connection.url+'/debug');
 
-    _ws.onopen = () => {
-      _ws.send(this.audioFile.buffer);
-    };
+    _ws.onopen = () => { _ws.send(_connection.input); };
     _ws.onmessage = (event) => {
-      console.log(event);
+      _ws.close();
+      _connection['output'] = JSON.parse(event.data);
+      this.connections['places'] =_connection;
+      this._writeAudioFile(announce.name, announce.type, _connection['output'].audioBuffer.data);
     };
-    _ws.onerror = (event) => {
-      console.log(event.message);
+    _ws.onerror = (event) => { console.log(event.message); };
+    _ws.onclose = (event) => { console.log('onclose: ', event); };
+  }
+
+  _writeAudioFile(audioFileName, audioFileType, audioBuffer) {
+    console.log('_writeAudioFile:');
+    let _audioFile = {
+      'name': audioFileName,
+      'type': audioFileType,
+      'uri': RNFetchBlob.fs.dirs.DocumentDir + '/' + audioFileName + '.' + audioFileType,
+      'buffer': audioBuffer,
     };
-    _ws.onclose = (event) => {
-      console.log(event.code, event.reason);
-    };
+
+    RNFetchBlob.fs.writeFile(_audioFile.uri, _audioFile.buffer, 'ascii').then(() => {
+      this.audioFiles[audioFileName] = _audioFile;
+      this._createSound(announce.name, announce.type);
+    });
+  }
+
+  _createSound(audioFileName, audioFileType) {
+    let _sound = new Sound(audioFileName + '.' + audioFileType, RNFetchBlob.fs.dirs.DocumentDir, (error) => {
+      if (error) {
+        console.log('failed to load the sound', error);
+        return;
+      }
+      _sound.play();
+    });
   }
 
   render() {
